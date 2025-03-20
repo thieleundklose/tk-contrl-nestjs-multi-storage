@@ -6,5 +6,6 @@ export interface StorageModuleOptions {
   bucket?: string;
   accessKeyId?: string;
   secretAccessKey?: string;
+  forcePathStyle?: boolean;
   prefix?: string;
 }
