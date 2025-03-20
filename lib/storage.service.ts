@@ -32,6 +32,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
   private readonly bucket?: string;
   private readonly accessKeyId?: string;
   private readonly secretAccessKey?: string;
+  private readonly forcePathStyle?: boolean = false;
 
   constructor(@Inject(MODULE_OPTIONS_TOKEN) private options: StorageModuleOptions) {
     switch (options.type) {
@@ -42,6 +43,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
         this.bucket = options.bucket;
         this.accessKeyId = options.accessKeyId;
         this.secretAccessKey = options.secretAccessKey;
+        this.forcePathStyle = options.forcePathStyle;
         break;
       case 'fileSystem':
       default:
@@ -65,6 +67,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
           accessKeyId: this.accessKeyId,
           secretAccessKey: this.secretAccessKey,
         },
+        forcePathStyle: this.forcePathStyle,
       });
     }
   }
