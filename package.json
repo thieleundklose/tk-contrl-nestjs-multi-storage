@@ -1,5 +1,5 @@
 {
-    "name": "nestjs-multi-storage",
+    "name": "@thieleundklose/nestjs-multi-storage",
     "version": "0.1.0",
     "description": "A multi-storage filesystem manager for NestJS, based on fs function names",
     "main": "dist/index.js",
@@ -9,6 +9,9 @@
         "nestjs-filesystem",
         "nestjs-s3"
     ],
+    "publishConfig": {
+        "registry": "https://npm.pkg.github.com/"
+    },
     "repository": {
         "type": "git",
         "url": "https://github.com/jonathanarezki/nestjs-multi-storage.git"
