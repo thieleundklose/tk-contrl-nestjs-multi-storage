@@ -2,9 +2,11 @@ import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { MODULE_OPTIONS_TOKEN } from './storage.module-definition';
 import { StorageModuleOptions } from './interfaces';
 import {
+  CreateBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
+  ListBucketsCommand,
   ListObjectsCommand,
   ListObjectsCommandInput,
   ListObjectsCommandOutput,
@@ -213,9 +215,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.readFile(path.join(this.prefix, filePath));
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       const streamToBuffer: (_stream: stream) => Promise<Buffer> = (_stream) => {
         return new Promise((resolve, reject) => {
@@ -256,15 +256,41 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.writeFile(path.join(this.prefix, filePath), data);
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       if (typeof data === 'string') {
         data = Buffer.from(data);
       }
       await this.s3Client!.send(new PutObjectCommand({ Bucket: bucket, Key: this.normalizeKey(filePath), Body: data }));
     }
+  }
+
+  async ensureBucketExists(bucket?: string): Promise<string | undefined> {
+    if (bucket === undefined) {
+        bucket = this.bucket;
+    }
+
+    if (bucket && this.s3Client) {
+        try {
+            const listBucketsCommand = new ListBucketsCommand({});
+            const buckets = await this.s3Client.send(listBucketsCommand);
+            const bucketExists = buckets.Buckets?.some(
+                (b) => b.Name === bucket
+            );
+
+            if (!bucketExists) {
+                const createBucketCommand = new CreateBucketCommand({
+                    Bucket: bucket,
+                });
+                await this.s3Client.send(createBucketCommand);
+            }
+
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    return bucket;
   }
 
   async rm(filePath: string, bucket?: string): Promise<void> {
