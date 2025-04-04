@@ -366,4 +366,37 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
       return pass;
     }
   }
+
+    /**
+     * Generates the output path based on the usage of S3 or the local file system.
+     * @param filePath - The relative path of the file.
+     * @param bucket - Optional bucket name (only for S3).
+     * @returns The full output path.
+     */
+    generateOutputPath(filePath: string, bucket?: string): string {
+        if (this.useFileSystem) {
+            // Local file system: Combine the prefix with the file path
+            return path.join(this.prefix, filePath);
+        } else {
+            // S3: Use the endpoint, bucket, and file path
+            bucket = bucket ?? this.bucket; // Fallback to the default bucket
+            if (!bucket) {
+                throw new Error('Bucket is required for S3 storage.');
+            }
+
+            // Normalize the endpoint and file path
+            const normalizedEndpoint = this.endpoint?.replace(/\/+$/, ''); // Remove trailing slashes
+            const normalizedKey = this.normalizeKey(filePath); // Normalize the file path
+
+            if (this.forcePathStyle) {
+                // Path-Style: Bucket is part of the path
+                return `${normalizedEndpoint}/${bucket}/${normalizedKey}`;
+            } else {
+                // Virtual Host-Style: Bucket is part of the subdomain
+                const endpointWithoutProtocol = (normalizedEndpoint ?? '').replace(/(^\w+:|^)\/\//, ''); // Remove protocol
+                return `https://${bucket}.${endpointWithoutProtocol}/${normalizedKey}`;
+            }
+        }
+    }
+
 }
