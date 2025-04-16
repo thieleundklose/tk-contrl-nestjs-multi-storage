@@ -10,6 +10,7 @@ import {
   ListObjectsCommand,
   ListObjectsCommandInput,
   ListObjectsCommandOutput,
+  ObjectCannedACL,
   PutObjectCommand,
   PutObjectCommandOutput,
   S3Client,
@@ -252,7 +253,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async writeFile(filePath: string, data: string | Buffer, bucket?: string, contentType?: string): Promise<void> {
+  async writeFile(filePath: string, data: string | Buffer, bucket?: string, contentType?: string, publicAccess?: boolean): Promise<void> {
     if (this.useFileSystem) {
       return fs.promises.writeFile(path.join(this.prefix, filePath), data);
     } else {
@@ -267,6 +268,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
         Key: this.normalizeKey(filePath),
         Body: data,
         ContentType: contentType || 'application/octet-stream',
+        ...(publicAccess ? { ACL: 'public-read'  as ObjectCannedACL } : {}),
       };
 
       await this.s3Client!.send(new PutObjectCommand(params));
