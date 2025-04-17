@@ -91,9 +91,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.mkdir(path.join(this.prefix, folderPath), { recursive: true });
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       await this.s3Client!.send(
         new PutObjectCommand({ Bucket: bucket, Key: this.normalizeDirKey(folderPath), Body: '', ContentLength: 0 }),
@@ -163,9 +161,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.rm(path.join(this.prefix, folderPath), { recursive: true });
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       const keys = await this.s3Client!.send(
         new ListObjectsCommand({ Bucket: bucket, Prefix: this.normalizeDirKey(folderPath) }),
