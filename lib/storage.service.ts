@@ -175,9 +175,11 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
         return list.sort().reverse();
       });
 
-      await this.s3Client!.send(
-        new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map((key) => ({ Key: key })) } }),
-      );
+      if (keys.length > 0){
+        await this.s3Client!.send(
+          new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map((key) => ({ Key: key })) } }),
+        );
+      }
     }
   }
 
