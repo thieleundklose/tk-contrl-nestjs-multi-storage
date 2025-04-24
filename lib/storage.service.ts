@@ -2,6 +2,7 @@ import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { MODULE_OPTIONS_TOKEN } from './storage.module-definition';
 import { StorageModuleOptions } from './interfaces';
 import {
+    CopyObjectCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
@@ -175,9 +176,11 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
         return list.sort().reverse();
       });
 
-      await this.s3Client!.send(
-        new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map((key) => ({ Key: key })) } }),
-      );
+      if (keys.length > 0){
+        await this.s3Client!.send(
+          new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map((key) => ({ Key: key })) } }),
+        );
+      }
     }
   }
 
@@ -393,6 +396,63 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
                 // Virtual Host-Style: Bucket is part of the subdomain
                 const endpointWithoutProtocol = (normalizedEndpoint ?? '').replace(/(^\w+:|^)\/\//, ''); // Remove protocol
                 return `https://${bucket}.${endpointWithoutProtocol}/${normalizedKey}`;
+            }
+        }
+    }
+
+    async moveFolder(sourcePath: string, targetPath: string, bucket?: string): Promise<void> {
+        if (this.useFileSystem) {
+            // move whole folder
+            const sourceFullPath = path.join(this.prefix, sourcePath);
+            const targetFullPath = path.join(this.prefix, targetPath);
+
+            if (fs.existsSync(targetFullPath)) {
+                throw new Error(`Target folder already exists: ${targetFullPath}`);
+            }
+
+            await fs.promises.rename(sourceFullPath, targetFullPath);
+        } else {
+            bucket = bucket ?? this.bucket;
+            if (!bucket) {
+                throw new Error('Bucket is required for S3 storage.');
+            }
+
+            // get objects to move
+            const objectsToMove = await this.s3Client!.send(
+                new ListObjectsCommand({
+                    Bucket: bucket,
+                    Prefix: this.normalizeDirKey(sourcePath),
+                })
+            ).then((output) => output.Contents ?? []);
+
+            if (objectsToMove.length === 0) {
+                throw new Error(`No objects found under the path: ${sourcePath}`);
+            }
+
+            // move object
+            for (const object of objectsToMove) {
+                const oldKey = object.Key!;
+                const newKey = oldKey.replace(
+                    this.normalizeDirKey(sourcePath),
+                    this.normalizeDirKey(targetPath)
+                );
+
+                // copy to new location
+                await this.s3Client!.send(
+                    new CopyObjectCommand({
+                        Bucket: bucket,
+                        CopySource: `${bucket}/${oldKey}`,
+                        Key: newKey,
+                    })
+                );
+
+                // delete from old location
+                await this.s3Client!.send(
+                    new DeleteObjectCommand({
+                        Bucket: bucket,
+                        Key: oldKey,
+                    })
+                );
             }
         }
     }
