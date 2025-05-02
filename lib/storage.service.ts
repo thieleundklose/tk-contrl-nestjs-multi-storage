@@ -188,7 +188,6 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     } else {
       bucket = await this.ensureBucketExists(bucket);
 
-
       return this.s3Client!.send(new ListObjectsCommand({ Bucket: bucket, Prefix: this.normalizeKey(_path) })).then(
         (output: ListObjectsCommandOutput) => {
           if (output.Contents && output.Prefix) {
