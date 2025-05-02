@@ -104,9 +104,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.readdir(path.join(this.prefix, folderPath));
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       const bucketParams: ListObjectsCommandInput = {
         Bucket: bucket,
@@ -188,9 +186,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.existsSync(path.join(this.prefix, _path));
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       return this.s3Client!.send(new ListObjectsCommand({ Bucket: bucket, Prefix: this.normalizeKey(_path) })).then(
         (output: ListObjectsCommandOutput) => {
@@ -307,9 +303,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.rm(path.join(this.prefix, filePath));
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       await this.s3Client!.send(new DeleteObjectCommand({ Bucket: bucket, Key: this.normalizeKey(filePath) }));
     }
