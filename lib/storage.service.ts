@@ -451,4 +451,38 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
+    async moveFile(sourcePath: string, targetPath: string, bucket?: string): Promise<void> {
+        if (this.useFileSystem) {
+            const src = path.join(this.prefix, sourcePath);
+            const dst = path.join(this.prefix, targetPath);
+
+            await fs.promises.mkdir(path.dirname(dst), { recursive: true });
+            await fs.promises.rename(src, dst);
+        } else {
+            bucket = bucket ?? this.bucket;
+
+            if (!bucket) {
+                throw new Error('Bucket is required for S3 storage.');
+            }
+
+            const output = await this.s3Client!.send(
+                new CopyObjectCommand({
+                    Bucket: bucket,
+                    CopySource: `${bucket}/${this.normalizeKey(sourcePath)}`,
+                    Key: this.normalizeKey(targetPath),
+                }),
+            );
+
+            if (!output.CopyObjectResult) {
+                throw new Error(`Failed to copy file from ${sourcePath} to ${targetPath}`);
+            }
+
+            await this.s3Client!.send(
+                new DeleteObjectCommand({
+                    Bucket: bucket,
+                    Key: this.normalizeKey(sourcePath),
+                }),
+            );
+        }
+    }
 }
