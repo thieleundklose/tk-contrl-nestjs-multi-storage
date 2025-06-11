@@ -474,7 +474,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
             );
 
             if (!output.CopyObjectResult) {
-                throw new Error(`Failed to copy file from ${sourcePath} to ${targetPath}`);
+                throw new Error(`Failed to copy file from ${sourcePath} to ${targetPath} on bucket ${bucket}`);
             }
 
             await this.s3Client!.send(
