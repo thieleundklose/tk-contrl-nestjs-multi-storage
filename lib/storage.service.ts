@@ -18,7 +18,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as stream from 'stream';
 import { PassThrough, Readable } from 'stream';
-import * as fetch from 'node-fetch';
 
 @Injectable()
 export class StorageService implements OnModuleInit, OnModuleDestroy {
@@ -236,7 +235,13 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
             this.endpointCDN!.replace(/(^\w+:|^)\/\//, ''),
           );
           return fetch(path)
-            .then((response) => response.buffer())
+            .then((response) => {
+              if (!response.ok) {
+                throw new Error(`CDN fetch failed: ${response.status} ${response.statusText}`);
+              }
+              return response.arrayBuffer();
+            })
+            .then((buffer) => Buffer.from(buffer))
             .catch((error) => {
               throw error;
             });
