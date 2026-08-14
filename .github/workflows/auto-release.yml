@@ -6,41 +6,85 @@ on:
       - main
     paths:
       - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Extract version from package.json
-        id: get_version
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Read package information
+        id: package
+        shell: bash
         run: |
-          # Liest die Version mit jq aus und speichert sie in einer Umgebungsvariable
-          VERSION=$(jq -r .version package.json)
-          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Detected version: $VERSION"
-      - name: Check if tag exists
-        id: check_tag
-        run: |
-          if git rev-parse "v${{ env.PACKAGE_VERSION }}" >/dev/null 2>&1; then
-            echo "Tag v${{ env.PACKAGE_VERSION }} already exists."
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Tag v${{ env.PACKAGE_VERSION }} does not exist. Creating release..."
-            echo "exists=false" >> $GITHUB_OUTPUT
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$PACKAGE_NAME" != "@thieleundklose/nestjs-multi-storage" ]; then
+            echo "Unexpected package name: $PACKAGE_NAME"
+            exit 1
           fi
+
+          echo "name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check npm version
+        id: npm_version
+        shell: bash
+        run: |
+          if npm view "${{ steps.package.outputs.name }}@${{ steps.package.outputs.version }}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${{ steps.package.outputs.version }} is already published on npm."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Version ${{ steps.package.outputs.version }} will be published to npm."
+          fi
+
+      - name: Install dependencies
+        if: steps.npm_version.outputs.exists == 'false'
+        run: npm ci
+
+      - name: Build package
+        if: steps.npm_version.outputs.exists == 'false'
+        run: npm run build
+
+      - name: Publish package to npm
+        if: steps.npm_version.outputs.exists == 'false'
+        run: npm publish --access public
+
+      - name: Check if GitHub tag exists
+        id: check_tag
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v${{ steps.package.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag v${{ steps.package.outputs.version }} already exists."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag v${{ steps.package.outputs.version }} does not exist. Creating release..."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create Release
         if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.PACKAGE_VERSION }}
-          name: Release v${{ env.PACKAGE_VERSION }}
-          body: "Automated release for version ${{ env.PACKAGE_VERSION }}"
+          tag_name: v${{ steps.package.outputs.version }}
+          name: Release v${{ steps.package.outputs.version }}
+          body: "Automated release for version ${{ steps.package.outputs.version }}"
           draft: false
           prerelease: false
           generate_release_notes: true

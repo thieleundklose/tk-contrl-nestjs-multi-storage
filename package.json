@@ -1,5 +1,5 @@
 {
-    "name": "nestjs-multi-storage",
+    "name": "@thieleundklose/nestjs-multi-storage",
     "version": "0.2.1",
     "description": "A multi-storage filesystem manager for NestJS, based on fs function names",
     "main": "dist/index.js",
@@ -11,15 +11,19 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/jonathanarezki/nestjs-multi-storage.git"
+        "url": "git+https://github.com/thieleundklose/tk-contrl-nestjs-multi-storage.git"
     },
     "bugs": {
-        "url": "https://github.com/jonathanarezki/nestjs-multi-storage/issues"
+        "url": "https://github.com/thieleundklose/tk-contrl-nestjs-multi-storage/issues"
     },
-    "homepage": "https://github.com/jonathanarezki/nestjs-multi-storage",
+    "homepage": "https://github.com/thieleundklose/tk-contrl-nestjs-multi-storage#readme",
     "author": "Jonathan Arezki <arezki@webbar.dev>",
     "private": false,
     "license": "MIT",
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
     "scripts": {
         "build": "tsc -p tsconfig.json",
         "format": "prettier --write \"**/*.ts\"",
