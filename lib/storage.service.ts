@@ -2,12 +2,16 @@ import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { MODULE_OPTIONS_TOKEN } from './storage.module-definition';
 import { StorageModuleOptions } from './interfaces';
 import {
+  CopyObjectCommand,
+  CreateBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
+  ListBucketsCommand,
   ListObjectsCommand,
   ListObjectsCommandInput,
   ListObjectsCommandOutput,
+  ObjectCannedACL,
   PutObjectCommand,
   PutObjectCommandOutput,
   S3Client,
@@ -32,6 +36,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
   private readonly bucket?: string;
   private readonly accessKeyId?: string;
   private readonly secretAccessKey?: string;
+  private readonly forcePathStyle?: boolean = false;
 
   constructor(@Inject(MODULE_OPTIONS_TOKEN) private options: StorageModuleOptions) {
     switch (options.type) {
@@ -42,6 +47,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
         this.bucket = options.bucket;
         this.accessKeyId = options.accessKeyId;
         this.secretAccessKey = options.secretAccessKey;
+        this.forcePathStyle = options.forcePathStyle;
         break;
       case 'fileSystem':
       default:
@@ -65,6 +71,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
           accessKeyId: this.accessKeyId,
           secretAccessKey: this.secretAccessKey,
         },
+        forcePathStyle: this.forcePathStyle,
       });
     }
   }
@@ -85,9 +92,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.mkdir(path.join(this.prefix, folderPath), { recursive: true });
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       await this.s3Client!.send(
         new PutObjectCommand({ Bucket: bucket, Key: this.normalizeDirKey(folderPath), Body: '', ContentLength: 0 }),
@@ -99,9 +104,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.readdir(path.join(this.prefix, folderPath));
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       const bucketParams: ListObjectsCommandInput = {
         Bucket: bucket,
@@ -157,9 +160,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.rm(path.join(this.prefix, folderPath), { recursive: true });
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       const keys = await this.s3Client!.send(
         new ListObjectsCommand({ Bucket: bucket, Prefix: this.normalizeDirKey(folderPath) }),
@@ -173,9 +174,11 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
         return list.sort().reverse();
       });
 
-      await this.s3Client!.send(
-        new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map((key) => ({ Key: key })) } }),
-      );
+      if (keys.length > 0) {
+        await this.s3Client!.send(
+          new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map((key) => ({ Key: key })) } }),
+        );
+      }
     }
   }
 
@@ -183,9 +186,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.existsSync(path.join(this.prefix, _path));
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       return this.s3Client!.send(new ListObjectsCommand({ Bucket: bucket, Prefix: this.normalizeKey(_path) })).then(
         (output: ListObjectsCommandOutput) => {
@@ -210,9 +211,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     if (this.useFileSystem) {
       return fs.promises.readFile(path.join(this.prefix, filePath));
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       const streamToBuffer: (_stream: stream) => Promise<Buffer> = (_stream) => {
         return new Promise((resolve, reject) => {
@@ -249,28 +248,56 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async writeFile(filePath: string, data: string | Buffer, bucket?: string): Promise<void> {
+  async writeFile(
+    filePath: string,
+    data: string | Buffer,
+    bucket?: string,
+    contentType?: string,
+    publicAccess?: boolean,
+  ): Promise<void> {
     if (this.useFileSystem) {
       return fs.promises.writeFile(path.join(this.prefix, filePath), data);
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       if (typeof data === 'string') {
         data = Buffer.from(data);
       }
-      await this.s3Client!.send(new PutObjectCommand({ Bucket: bucket, Key: this.normalizeKey(filePath), Body: data }));
+
+      const params = {
+        Bucket: bucket,
+        Key: this.normalizeKey(filePath),
+        Body: data,
+        ContentType: contentType || 'application/octet-stream',
+        ...(publicAccess ? { ACL: 'public-read' as ObjectCannedACL } : {}),
+      };
+
+      await this.s3Client!.send(new PutObjectCommand(params));
     }
+  }
+
+  async ensureBucketExists(bucket?: string): Promise<string | undefined> {
+    if (bucket === undefined) {
+      bucket = this.bucket;
+    }
+
+    if (bucket && this.s3Client) {
+      const buckets = await this.s3Client.send(new ListBucketsCommand({}));
+      const bucketExists = buckets.Buckets?.some((item) => item.Name === bucket);
+
+      if (!bucketExists) {
+        await this.s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
+      }
+    }
+
+    return bucket;
   }
 
   async rm(filePath: string, bucket?: string): Promise<void> {
     if (this.useFileSystem) {
       return fs.promises.rm(path.join(this.prefix, filePath));
     } else {
-      if (typeof bucket !== 'string') {
-        bucket = this.bucket;
-      }
+      bucket = await this.ensureBucketExists(bucket);
 
       await this.s3Client!.send(new DeleteObjectCommand({ Bucket: bucket, Key: this.normalizeKey(filePath) }));
     }
@@ -327,5 +354,119 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
 
       return pass;
     }
+  }
+
+  /**
+   * Generates the output path based on the usage of S3 or the local file system.
+   * @param filePath - The relative path of the file.
+   * @param bucket - Optional bucket name (only for S3).
+   * @returns The full output path.
+   */
+  generateOutputPath(filePath: string, bucket?: string): string {
+    if (this.useFileSystem) {
+      return path.join(this.prefix, filePath);
+    }
+
+    bucket = bucket ?? this.bucket;
+    if (!bucket) {
+      throw new Error('Bucket is required for S3 storage.');
+    }
+
+    const normalizedEndpoint = this.endpoint?.replace(/\/+$/, '');
+    const normalizedKey = this.normalizeKey(filePath);
+
+    if (this.forcePathStyle) {
+      return `${normalizedEndpoint}/${bucket}/${normalizedKey}`;
+    }
+
+    const endpointWithoutProtocol = (normalizedEndpoint ?? '').replace(/(^\w+:|^)\/\//, '');
+    return `https://${bucket}.${endpointWithoutProtocol}/${normalizedKey}`;
+  }
+
+  async moveFolder(sourcePath: string, targetPath: string, bucket?: string): Promise<void> {
+    if (this.useFileSystem) {
+      const sourceFullPath = path.join(this.prefix, sourcePath);
+      const targetFullPath = path.join(this.prefix, targetPath);
+
+      if (fs.existsSync(targetFullPath)) {
+        throw new Error(`Target folder already exists: ${targetFullPath}`);
+      }
+
+      await fs.promises.rename(sourceFullPath, targetFullPath);
+      return;
+    }
+
+    bucket = bucket ?? this.bucket;
+    if (!bucket) {
+      throw new Error('Bucket is required for S3 storage.');
+    }
+
+    const objectsToMove = await this.s3Client!
+      .send(
+        new ListObjectsCommand({
+          Bucket: bucket,
+          Prefix: this.normalizeDirKey(sourcePath),
+        }),
+      )
+      .then((output) => output.Contents ?? []);
+
+    if (objectsToMove.length === 0) {
+      throw new Error(`No objects found under the path: ${sourcePath}`);
+    }
+
+    for (const object of objectsToMove) {
+      const oldKey = object.Key!;
+      const newKey = oldKey.replace(this.normalizeDirKey(sourcePath), this.normalizeDirKey(targetPath));
+
+      await this.s3Client!.send(
+        new CopyObjectCommand({
+          Bucket: bucket,
+          CopySource: `${bucket}/${oldKey}`,
+          Key: newKey,
+        }),
+      );
+
+      await this.s3Client!.send(
+        new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: oldKey,
+        }),
+      );
+    }
+  }
+
+  async moveFile(sourcePath: string, targetPath: string, bucket?: string): Promise<void> {
+    if (this.useFileSystem) {
+      const sourceFullPath = path.join(this.prefix, sourcePath);
+      const targetFullPath = path.join(this.prefix, targetPath);
+
+      await fs.promises.mkdir(path.dirname(targetFullPath), { recursive: true });
+      await fs.promises.rename(sourceFullPath, targetFullPath);
+      return;
+    }
+
+    bucket = bucket ?? this.bucket;
+    if (!bucket) {
+      throw new Error('Bucket is required for S3 storage.');
+    }
+
+    const output = await this.s3Client!.send(
+      new CopyObjectCommand({
+        Bucket: bucket,
+        CopySource: `${bucket}/${this.normalizeKey(sourcePath)}`,
+        Key: this.normalizeKey(targetPath),
+      }),
+    );
+
+    if (!output.CopyObjectResult) {
+      throw new Error(`Failed to copy file from ${sourcePath} to ${targetPath} on bucket ${bucket}`);
+    }
+
+    await this.s3Client!.send(
+      new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: this.normalizeKey(sourcePath),
+      }),
+    );
   }
 }
